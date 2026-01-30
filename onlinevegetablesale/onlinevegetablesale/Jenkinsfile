@@ -10,7 +10,7 @@ pipeline {
         stage('Checkout') {
     steps {
         git credentialsId: 'github-creds', 
-            url: 'https://github.com/Annapragada-Neeraj/onlineapp.git', 
+            url: 'https://github.com/Annapragada-Neearj/onlineapp.git', 
             branch: 'master'
     }
 }
