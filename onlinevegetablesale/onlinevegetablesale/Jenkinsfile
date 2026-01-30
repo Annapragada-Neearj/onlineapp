@@ -1,14 +1,18 @@
 pipeline {
     agent any
 
+    options {
+        cleanWs()
+    }
+
     tools {
-        jdk 'JDK21'
-        maven 'Maven3'
+        nodejs 'nodejs'
     }
 
     stages {
 
-        stage('Checkout') {
+        
+stage('Checkout') {
             steps {
                 git branch: 'master',
                     credentialsId: 'github-creds',
@@ -16,31 +20,29 @@ pipeline {
             }
         }
 
+
+        stage('Install Dependencies') {
+            steps {
+                bat 'npm install'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                bat '''
+                if npm run | grep -q test; then
+                  npm test
+                else
+                  echo "No tests configured"
+                fi
+                '''
+            }
+        }
+
         stage('Build') {
             steps {
-                bat 'mvn clean install'
+                bat 'npm run build'
             }
-        }
-
-        stage('Test Reports') {
-            steps {
-                junit '**/target/surefire-reports/*.xml'
-            }
-        }
-
-        stage('Archive Artifact') {
-            steps {
-                archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true
-            }
-        }
-    }
-
-    post {
-        success {
-            echo "Build successful!"
-        }
-        failure {
-            echo "Build failed!"
         }
     }
 }
