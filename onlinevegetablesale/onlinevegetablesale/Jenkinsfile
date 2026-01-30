@@ -1,36 +1,112 @@
 pipeline {
-    agent any
+  agent any
 
-    tools {
-        nodejs 'nodejs'   // Configure in Jenkins Global Tools
+  options {
+    timestamps()
+    ansiColor('xterm')
+  }
+
+  environment {
+    // Tool names must match your Jenkins "Global Tool Configuration"
+    JAVA_HOME = tool name: 'JDK21', type: 'jdk'
+    MAVEN_HOME = tool name: 'Maven3', type: 'maven'
+    PATH = "${JAVA_HOME}\\bin;${MAVEN_HOME}\\bin;${PATH}"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git branch: 'master',
+            credentialsId: 'github-creds',
+            url: 'https://github.com/Annapragada-Neearj/onlineapp.git'
+      }
     }
 
-    stages {
-
-        stage('Checkout') {
-    steps {
-        git credentialsId: 'github-creds', 
-            url: 'https://github.com/Annapragada-Neearj/onlineapp.git', 
-            branch: 'master'
+    // If you really need Node.js (e.g., a frontend build), enable this stage.
+    // Otherwise you can remove it safely.
+    stage('Install Node (optional)') {
+      when { expression { return false } } // flip to true if needed
+      steps {
+        script {
+          def nodeHome = tool name: 'NodeJS-25', type: 'jenkins.plugins.nodejs.tools.NodeJSInstallation'
+          env.PATH = "${nodeHome}\\;${env.PATH}"
+        }
+        bat 'node -v && npm -v'
+      }
     }
-}
 
-        stage('Install Dependencies') {
-            steps {
-                sh 'npm install'
-            }
+    stage('Build & Test') {
+      steps {
+        bat 'mvn -v'
+        bat 'mvn -B -DskipTests=false clean verify'
+      }
+      post {
+        always {
+          junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
         }
-
-        stage('Test') {
-            steps {
-                sh 'npm test || echo "No tests found"'
-            }
-        }
-
-        stage('Build') {
-            steps {
-                sh 'npm run build'
-            }
-        }
+      }
     }
+
+    stage('Archive Artifact') {
+      steps {
+        archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true
+      }
+    }
+
+    // OPTIONAL: Deploy locally on port 8093 after build
+    stage('Deploy (Local)') {
+      when { expression { return true } } // set to false if you don’t want to auto-run the app
+      steps {
+        // Kill any process using 8093 (ignore errors if nothing is running)
+        powershell '''
+          $p = Get-NetTCPConnection -LocalPort 8093 -ErrorAction SilentlyContinue
+          if ($p) {
+            Write-Host "Port 8093 in use by PID(s):" ($p | Select-Object -ExpandProperty OwningProcess -Unique)
+            $p | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object {
+              try { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } catch {}
+            }
+            Start-Sleep -Seconds 2
+          }
+        '''
+
+        // Change to the module that contains the jar (adjust path if different)
+        dir('onlinevegetablesale/onlinevegetablesale/target') {
+          // Start app in background, non-blocking. Logs redirected to file.
+          powershell '''
+            $jar = (Get-ChildItem -Filter *-SNAPSHOT.jar | Select-Object -First 1).FullName
+            if (-not $jar) { throw "Jar not found in target directory." }
+            Write-Host "Starting: $jar on port 8093"
+            Start-Process -FilePath "java" -ArgumentList @("-jar", "`"$jar`"") -RedirectStandardOutput "app.log" -RedirectStandardError "app.err" -NoNewWindow
+          '''
+        }
+
+        // Give app a few seconds to start, then probe Swagger endpoint
+        powershell '''
+          Start-Sleep -Seconds 8
+          try {
+            $resp = Invoke-WebRequest -Uri "http://localhost:8093/swagger-ui/index.html" -UseBasicParsing -TimeoutSec 5
+            if ($resp.StatusCode -ge 200 -and $resp.StatusCode -lt 400) {
+              Write-Host "Swagger UI is reachable at http://localhost:8093/swagger-ui/index.html"
+            } else {
+              Write-Host "App responded but not with success code. Status:" $resp.StatusCode
+            }
+          } catch {
+            Write-Host "Could not reach Swagger. If you use Springfox 2.x, try /swagger-ui.html"
+          }
+        '''
+      }
+    }
+  }
+
+  post {
+    failure {
+      echo 'Build failed. Check the logs above for the precise failing step.'
+    }
+    success {
+      echo 'Build succeeded.'
+      echo 'If Deploy stage is enabled, Swagger is at:'
+      echo '  - http://localhost:8093/swagger-ui/index.html (springdoc-openapi / Spring Boot 3+)'
+      echo '  - http://localhost:8093/swagger-ui.html (Springfox 2.x / Spring Boot 2.x)'
+    }
+  }
 }
