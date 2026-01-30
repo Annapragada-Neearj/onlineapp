@@ -8,11 +8,12 @@ pipeline {
     stages {
 
         stage('Checkout') {
-            steps {
-                git branch: 'main',
-                    url: 'https://github.com/Annapragada-Neeraj/onlineapp.git'
-            }
-        }
+    steps {
+        git credentialsId: 'github-creds', 
+            url: 'https://github.com/Annapragada-Neeraj/onlineapp.git', 
+            branch: 'master'
+    }
+}
 
         stage('Install Dependencies') {
             steps {
