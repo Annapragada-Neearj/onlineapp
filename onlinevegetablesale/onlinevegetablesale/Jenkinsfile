@@ -1,48 +1,93 @@
 pipeline {
-    agent any
+  agent any
 
-    options {
-        cleanWs()
+  tools {
+    jdk 'JDK21'
+    maven 'Maven3'
+  }
+
+  options {
+    timestamps()
+    ansiColor('xterm')
+    // DO NOT put cleanWs() here; it's not an option.
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git branch: 'master',
+            credentialsId: 'github-creds',
+            url: 'https://github.com/Annapragada-Neearj/onlineapp.git'
+      }
     }
 
-    tools {
-        nodejs 'nodejs'
+    // Optional: If you want a clean workspace at the start
+    // stage('Prepare Workspace') {
+    //   steps {
+    //     cleanWs()
+    //   }
+    // }
+
+    stage('Build & Test') {
+      steps {
+        bat 'mvn -v'
+        bat 'mvn -B -DskipTests=false clean verify'
+      }
+      post {
+        always {
+          junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+        }
+      }
     }
 
-    stages {
-
-        
-stage('Checkout') {
-            steps {
-                git branch: 'master',
-                    credentialsId: 'github-creds',
-                    url: 'https://github.com/Annapragada-Neearj/onlineapp.git'
-            }
-        }
-
-
-        stage('Install Dependencies') {
-            steps {
-                bat 'npm install'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                bat '''
-                if npm run | grep -q test; then
-                  npm test
-                else
-                  echo "No tests configured"
-                fi
-                '''
-            }
-        }
-
-        stage('Build') {
-            steps {
-                bat 'npm run build'
-            }
-        }
+    stage('Archive Artifact') {
+      steps {
+        archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true
+      }
     }
+
+    // Optional local run to verify Swagger is alive
+    // stage('Deploy (Local)') {
+    //   steps {
+    //     powershell '''
+    //       $p = Get-NetTCPConnection -LocalPort 8093 -ErrorAction SilentlyContinue
+    //       if ($p) {
+    //         $p | Select -ExpandProperty OwningProcess -Unique | ForEach-Object {
+    //           try { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } catch {}
+    //         }
+    //         Start-Sleep -Seconds 2
+    //       }
+    //     '''
+    //     dir('onlinevegetablesale/onlinevegetablesale/target') {
+    //       powershell '''
+    //         $jar = (Get-ChildItem -Filter *-SNAPSHOT.jar | Select-Object -First 1).FullName
+    //         if (-not $jar) { throw "Jar not found in target directory." }
+    //         Start-Process -FilePath "java" -ArgumentList @("-jar", "`"$jar`"") -RedirectStandardOutput "app.log" -RedirectStandardError "app.err" -NoNewWindow
+    //       '''
+    //     }
+    //     powershell '''
+    //       Start-Sleep -Seconds 8
+    //       try {
+    //         $resp = Invoke-WebRequest -Uri "http://localhost:8093/swagger-ui/index.html" -UseBasicParsing -TimeoutSec 5
+    //         Write-Host "Swagger reachable (status: $($resp.StatusCode))"
+    //       } catch {
+    //         Write-Host "Could not reach Swagger yet. If using Springfox 2.x, try /swagger-ui.html"
+    //       }
+    //     '''
+    //   }
+    // }
+  }
+
+  post {
+    always {
+      // ✅ Correct place for cleanWs()
+      cleanWs()
+    }
+    success {
+      echo 'Build succeeded.'
+    }
+    failure {
+      echo 'Build failed. See logs above.'
+    }
+  }
 }
