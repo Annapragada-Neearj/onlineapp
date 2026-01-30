@@ -37,6 +37,19 @@ pipeline {
                                   fingerprint: true
             }
         }
+
+        
+        stage('Docker Build') {
+            steps {
+                script {
+                    bat """
+                        cd onlinevegetablesale/onlinevegetablesale
+                        docker build -t onlinevegetablesale-app:v1 .
+                    """
+                }
+            }
+        }
+
     }
 
     post {
