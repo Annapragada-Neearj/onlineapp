@@ -1,63 +1,18 @@
+
 pipeline {
     agent any
 
-    tools {
-        jdk 'JDK 21'       // EXACT name from Jenkins
-        maven 'Maven3'     // EXACT name from Jenkins
-    }
-
     stages {
-        
         stage('Checkout') {
             steps {
-                git branch: 'master',
-                    credentialsId: 'github-creds',
-                    url: 'https://github.com/Annapragada-Neearj/onlineapp.git'
+                git branch: 'main', url: '<your-repo-url>'
             }
         }
 
         stage('Build') {
             steps {
-                dir('onlinevegetablesale/onlinevegetablesale') {
-                    bat 'mvn clean install'
-                }
+                sh 'mvn clean package'
             }
-        }
-
-        stage('Test Reports') {
-            steps {
-                junit allowEmptyResults: true,
-                      testResults: '**/target/surefire-reports/*.xml'
-            }
-        }
-
-        stage('Archive Jar') {
-            steps {
-                archiveArtifacts artifacts: 'onlinevegetablesale/onlinevegetablesale/target/*.jar',
-                                  fingerprint: true
-            }
-        }
-
-        
-        stage('Docker Build') {
-            steps {
-                script {
-                    bat """
-                        cd onlinevegetablesale/onlinevegetablesale
-                        docker build -t onlinevegetablesale-app:v1 .
-                    """
-                }
-            }
-        }
-
-    }
-
-    post {
-        success {
-            echo 'Build succeeded!'
-        }
-        failure {
-            echo 'Build failed. Check logs.'
         }
     }
 }
